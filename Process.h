@@ -3,7 +3,9 @@
 
 #include <iostream>
 #include <vector>
+#ifndef _WIN32_WINNT
 #define _WIN32_WINNT 0x0501
+#endif
 #include <Windows.h>
 #include <TlHelp32.h>
 #include <stdexcept>
