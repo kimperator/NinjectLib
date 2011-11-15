@@ -1,4 +1,5 @@
-#pragma once
+#ifndef INJECT_LIB_H
+#define INJECT_LIB_H
 
 #include <Windows.h>
 #include <iostream>
@@ -28,3 +29,4 @@ private:
 	Process process_;
 	HMODULE hDll_;
 };
+#endif

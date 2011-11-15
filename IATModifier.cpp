@@ -1,10 +1,73 @@
 #include "IATModifier.h"
 #include <string>
 #include <Windows.h>
-#include <boost/scoped_array.hpp>
 
 using namespace std;
+typedef struct IMAGE_COR20_HEADER
+{
+    // Header versioning
 
+   DWORD                   cb;              
+   WORD                    MajorRuntimeVersion;
+   WORD                    MinorRuntimeVersion;
+    // Symbol table and startup information
+
+   IMAGE_DATA_DIRECTORY    MetaData;        
+   DWORD                   Flags;           
+    // DDBLD - Added next section to replace following lin
+
+    // DDBLD - Still verifying, since not in NT SDK
+
+    // DWORD                   EntryPointToken;
+
+    // If COMIMAGE_FLAGS_NATIVE_ENTRYPOINT is not set, 
+
+    // EntryPointToken represents a managed entrypoint.
+
+    // If COMIMAGE_FLAGS_NATIVE_ENTRYPOINT is set, 
+
+    // EntryPointRVA represents an RVA to a native entrypoint.
+
+   union {
+      DWORD               EntryPointToken;
+      DWORD               EntryPointRVA;
+   };
+    // DDBLD - End of Added Area
+
+    
+    // Binding information
+
+   IMAGE_DATA_DIRECTORY    Resources;
+   IMAGE_DATA_DIRECTORY    StrongNameSignature;
+
+    // Regular fixup and binding information
+
+   IMAGE_DATA_DIRECTORY    CodeManagerTable;
+   IMAGE_DATA_DIRECTORY    VTableFixups;
+   IMAGE_DATA_DIRECTORY    ExportAddressTableJumps;
+
+    // Precompiled image info (internal use only - set to zero)
+
+   IMAGE_DATA_DIRECTORY    ManagedNativeHeader;
+    
+}IMAGE_COR20_HEADER, *PIMAGE_COR20_HEADER;
+typedef enum ReplacesCorHdrNumericDefines
+{
+    // COM+ Header entry point flags.
+
+   COMIMAGE_FLAGS_ILONLY               =0x00000001,
+   COMIMAGE_FLAGS_32BITREQUIRED        =0x00000002,
+   COMIMAGE_FLAGS_IL_LIBRARY           =0x00000004,
+   COMIMAGE_FLAGS_STRONGNAMESIGNED     =0x00000008,
+    // DDBLD - Added Next Line - Still verifying general usage
+
+   COMIMAGE_FLAGS_NATIVE_ENTRYPOINT    =0x00000010,
+    // DDBLD - End of Add
+
+   COMIMAGE_FLAGS_TRACKDEBUGDATA       =0x00010000,
+    // Other kinds of flags follow
+
+} ReplacesCorHdrNumericDefines;
 IATModifier::IATModifier(const Process& process)
 	: process_(process), importDescrTblAddr_(NULL), importDescrTblSize_(0)
 {
@@ -65,7 +128,7 @@ void IATModifier::writeIAT(const vector<string>& dlls)
 	//DWORD origIIDTblSize = ntHeaders.OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].Size;
 	DWORD origIIDTblSize = determineIIDSize(importDescrTblAddr_);
 	DWORD newDescrTblSize = customDataSize + origIIDTblSize;
-	boost::scoped_array<char> newDescrTbl(new char[newDescrTblSize]);
+	char* newDescrTbl = new char[newDescrTblSize];
 	
 	// allocate and build new import descriptor
 	DWORD iba = ntHeaders.OptionalHeader.ImageBase;
@@ -76,7 +139,7 @@ void IATModifier::writeIAT(const vector<string>& dlls)
 	DWORD currentRVA = newTblRVA;
 	
 	// step 1: prepend new IID entries for our dlls and fill with the correct RVAs
-	PIMAGE_IMPORT_DESCRIPTOR currentIDD = (PIMAGE_IMPORT_DESCRIPTOR)newDescrTbl.get();
+	PIMAGE_IMPORT_DESCRIPTOR currentIDD = (PIMAGE_IMPORT_DESCRIPTOR)newDescrTbl;
 	for (size_t i=0; i<dlls.size(); ++i, ++currentIDD)
 	{
 		// layout: [<orig_first_thunk><IAT><name>]...[...]
@@ -97,7 +160,7 @@ void IATModifier::writeIAT(const vector<string>& dlls)
 
 	// step 3: build blocks made of IMAGE_THUNK_DATA, IAT and dll name string
 	// let curBlock point after IIDs
-	PDWORD curBlock = (PDWORD)(newDescrTbl.get() + origIIDTblSize + dlls.size() * sizeof(IMAGE_IMPORT_DESCRIPTOR));
+	PDWORD curBlock = (PDWORD)(newDescrTbl + origIIDTblSize + dlls.size() * sizeof(IMAGE_IMPORT_DESCRIPTOR));
 	for (size_t i=0; i<dlls.size(); ++i)
 	{
 		// force the dll to export at least one entry with ordinal 1
@@ -129,7 +192,7 @@ void IATModifier::writeIAT(const vector<string>& dlls)
 	}
 
 	// finally write new descriptor, fix RVAs and update IMAGE_NT_HEADERS
-	process_.writeMemory(newDescrTblAddress, newDescrTbl.get(), newDescrTblSize);
+	process_.writeMemory(newDescrTblAddress, newDescrTbl, newDescrTblSize);
 	DWORD newIIDRVA = (DWORD)newDescrTblAddress - iba;
 	ntHeaders.OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress = newIIDRVA;
 	ntHeaders.OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].Size = newDescrTblSize;
@@ -163,6 +226,7 @@ void IATModifier::writeIAT(const vector<string>& dlls)
 	DWORD oldProtect = process_.protectMemory((void*)ntHeadersAddr_, sizeof(IMAGE_NT_HEADERS), PAGE_EXECUTE_READWRITE);
 	process_.writeMemory((void*)ntHeadersAddr_, &ntHeaders, sizeof(IMAGE_NT_HEADERS));
 	process_.protectMemory((void*)ntHeadersAddr_, sizeof(IMAGE_NT_HEADERS), oldProtect);
+	delete[] newDescrTbl;
 }
 
 void* IATModifier::allocateMemAboveBase(void* baseAddress, size_t size)

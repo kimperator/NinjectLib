@@ -1,4 +1,5 @@
-#pragma once
+#ifndef GENERIC_INJECTOR_H
+#define GENERIC_INJECTOR_H
 
 #include <iostream>
 #include "Process.h"
@@ -33,3 +34,5 @@ private:
 	void* injectedData_;
 	void* injectedCode_;
 };
+
+#endif

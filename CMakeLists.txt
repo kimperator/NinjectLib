@@ -1,0 +1,1 @@
+add_library(ninject GenericInjector.cpp Process.cpp IATModifier.cpp)
